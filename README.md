@@ -37,7 +37,7 @@ jlink-agent probe --json
 # 2) Flash
 jlink-agent flash \
   --device STM32H747XI_M7 \
-  --serial 801039104 \
+  --serial <JLINK_SN> \
   --firmware .build/pro2-debug/executables/nfc_test/nfc_test.hex \
   --json
 
@@ -49,7 +49,7 @@ jlink-agent rtt-addr \
 # 4) Capture RTT for 30s
 jlink-agent rtt-capture \
   --device STM32H747XI_M7 \
-  --serial 801039104 \
+  --serial <JLINK_SN> \
   --address 0x38004010 \
   --out /tmp/pro2.log \
   --duration 30 \

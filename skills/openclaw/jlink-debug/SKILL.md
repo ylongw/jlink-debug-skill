@@ -19,7 +19,7 @@ Use this skill to run hardware-in-the-loop steps with J-Link.
 
 ## Commands
 
-Use the core CLI from `~/Documents/dec/jlink-agent-core`.
+Use the core CLI from this repository (or any installed `jlink-agent-core` package).
 
 ```bash
 # list connected probes

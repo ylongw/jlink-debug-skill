@@ -2,14 +2,14 @@ name: stm32h747-dual
 boards:
   pro1:
     device: STM32H747XI_M7
-    serial: "801039123"
+    serial: "REPLACE_WITH_PRO1_JLINK_SN"
     speed_flash: 4000
     speed_rtt: 12000
     gdb_port: 50000
     rtt_port: 19021
   pro2:
     device: STM32H747XI_M7
-    serial: "801039104"
+    serial: "REPLACE_WITH_PRO2_JLINK_SN"
     speed_flash: 4000
     speed_rtt: 12000
     gdb_port: 50001
