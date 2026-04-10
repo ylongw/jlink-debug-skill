@@ -135,6 +135,70 @@ def cmd_rtt_capture(device: str, serial: str, address: str, out_file: str, durat
     return {"ok": out.exists(), "output_file": str(out), "bytes": out.stat().st_size if out.exists() else 0}
 
 
+def cmd_gdb_batch(elf: str,
+                  gdb: str,
+                  gdb_port: int,
+                  commands: list[str],
+                  script_file: str | None,
+                  timeout: int,
+                  halt: bool) -> dict:
+    """Run arm-none-eabi-gdb in batch mode against a running JLinkGDBServer.
+
+    The gdb binary executes `target remote :<port>` first, then either:
+      - the inline command list from --commands, or
+      - the commands from the file passed via --script.
+    Finally issues `quit` and returns the captured stdout/stderr.
+
+    Use this for agent-driven breakpoint / step / variable inspection.
+    The CPU is halted on `target remote`; pass --halt false only if your
+    workflow needs to leave it running (rare).
+    """
+    _ensure_tool(gdb)
+    elf_path = Path(elf).expanduser().resolve()
+    if not elf_path.exists():
+        raise JLinkError(f"elf not found: {elf_path}")
+
+    cmdline: list[str] = [
+        gdb,
+        "-batch",
+        "-nx",                              # ignore ~/.gdbinit
+        "-ex", f"target remote :{gdb_port}",
+    ]
+
+    if halt:
+        cmdline += ["-ex", "monitor halt"]
+
+    if script_file:
+        sp = Path(script_file).expanduser().resolve()
+        if not sp.exists():
+            raise JLinkError(f"gdb script not found: {sp}")
+        cmdline += ["-x", str(sp)]
+    else:
+        for c in commands:
+            cmdline += ["-ex", c]
+
+    cmdline += ["-ex", "quit", str(elf_path)]
+
+    try:
+        proc = _run(cmdline, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        return {
+            "ok": False,
+            "timeout": True,
+            "error": f"gdb batch timed out after {timeout}s",
+            "stdout": (e.stdout.decode(errors="ignore") if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or "")),
+            "stderr": (e.stderr.decode(errors="ignore") if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or "")),
+        }
+
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout or "",
+        "stderr": proc.stderr or "",
+        "cmdline": cmdline,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jlink-agent", description="Agent-friendly J-Link automation")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -178,6 +242,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--duration", type=int, default=30)
     sp.add_argument("--speed", type=int, default=12000)
 
+    sp = sub.add_parser("gdb-batch",
+        help="run gdb in batch mode against a running gdb server (breakpoints/step/print/regs)")
+    add_json_arg(sp)
+    sp.add_argument("--elf", required=True,
+        help="path to the ELF with symbols")
+    sp.add_argument("--gdb", default="arm-none-eabi-gdb",
+        help="gdb binary (default: arm-none-eabi-gdb)")
+    sp.add_argument("--gdb-port", type=int, default=50000,
+        help="JLinkGDBServer port (must already be running)")
+    sp.add_argument("--commands", nargs="*", default=[],
+        help="inline gdb commands, each as a separate -ex. Mutually exclusive with --script")
+    sp.add_argument("--script",
+        help="path to a gdb command script (loaded via -x). Mutually exclusive with --commands")
+    sp.add_argument("--timeout", type=int, default=60,
+        help="kill gdb after N seconds (default 60)")
+    sp.add_argument("--no-halt", dest="halt", action="store_false", default=True,
+        help="skip the initial 'monitor halt' after connect")
+
     return p
 
 
@@ -207,6 +289,10 @@ def main() -> int:
             out = cmd_gdbserver_stop()
         elif args.cmd == "rtt-capture":
             out = cmd_rtt_capture(args.device, args.serial, args.address, args.out, args.duration, args.speed)
+        elif args.cmd == "gdb-batch":
+            if args.commands and args.script:
+                raise JLinkError("--commands and --script are mutually exclusive")
+            out = cmd_gdb_batch(args.elf, args.gdb, args.gdb_port, args.commands, args.script, args.timeout, args.halt)
         else:
             parser.print_help()
             return 1
